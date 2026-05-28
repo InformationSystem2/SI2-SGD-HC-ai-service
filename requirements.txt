@@ -1,6 +1,16 @@
 fastapi==0.115.0
 uvicorn==0.30.6
 python-multipart==0.0.9
-pillow==10.4.0
+pillow>=10.4.0
 pytesseract==0.3.13
 pdf2image==1.17.0
+opencv-python
+python-dotenv
+google-generativeai
+numpy
+psycopg2-binary
+sqlalchemy
+reportlab
+openpyxl
+pyjwt
+cryptography

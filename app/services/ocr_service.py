@@ -13,7 +13,9 @@ import numpy as np
 load_dotenv()
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+# Configurar la ruta de Tesseract en Windows (en Linux se detecta automáticamente)
+if os.name == 'nt':
+    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 SUPPORTED_IMAGES = {"image/jpeg", "image/png", "image/webp", "image/bmp"}
 SUPPORTED_PDF    = {"application/pdf"}
