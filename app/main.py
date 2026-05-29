@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import ocr, reports
+from app.routers import ocr, reports, analytics
 
 app = FastAPI(title="SGD-HC OCR Service & Reports", version="1.0.0")
 
@@ -13,6 +13,7 @@ app.add_middleware(
 
 app.include_router(ocr.router)
 app.include_router(reports.router)
+app.include_router(analytics.router) # <-- Agregas esta línea
 
 @app.get("/health")
 def health():
