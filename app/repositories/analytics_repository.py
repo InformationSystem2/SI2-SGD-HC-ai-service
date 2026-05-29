@@ -21,9 +21,15 @@ def get_commercial_distribution(db: Session):
 
 def get_storage_consumption(db: Session):
     query = text("""
-        SELECT TO_CHAR(issue_date, 'YYYY-MM') as month, COUNT(*) as total_documents 
-        FROM documents 
-        GROUP BY TO_CHAR(issue_date, 'YYYY-MM')
+        WITH storage_data AS (
+            SELECT issue_date as date_val FROM documents
+            UNION ALL
+            SELECT created_at::date as date_val FROM dicom_instances
+        )
+        SELECT TO_CHAR(date_val, 'YYYY-MM') as month, COUNT(*) as total_documents 
+        FROM storage_data 
+        WHERE date_val IS NOT NULL
+        GROUP BY TO_CHAR(date_val, 'YYYY-MM')
         ORDER BY month ASC
         LIMIT 6
     """)
