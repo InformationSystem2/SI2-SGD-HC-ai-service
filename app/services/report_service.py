@@ -58,6 +58,8 @@ class ReportService:
         if not user.has_permission(report_type.required_authority):
             raise HTTPException(status_code=403, detail="Acceso denegado a este reporte")
 
+        is_superuser = "ROLE_SUPERUSER" in user.roles
+
         columns, column_labels, rows, total, applied_filters = self.repo.execute_report_query(
             report_type=report_type,
             tenant_id=user.tenant_id,
@@ -68,7 +70,8 @@ class ReportService:
             date_from=req.dateFrom.strftime("%Y-%m-%d") if req.dateFrom else None,
             date_to=req.dateTo.strftime("%Y-%m-%d") if req.dateTo else None,
             limit=req.limit,
-            offset=req.offset
+            offset=req.offset,
+            is_superuser=is_superuser
         )
 
         return ReportResult(
@@ -94,6 +97,8 @@ class ReportService:
         if not user.has_permission(report_type.required_authority):
             raise HTTPException(status_code=403, detail="Acceso denegado a este reporte")
 
+        is_superuser = "ROLE_SUPERUSER" in user.roles
+
         # Force limit to 5000 for safety in exports
         columns, column_labels, rows, total, applied_filters = self.repo.execute_report_query(
             report_type=report_type,
@@ -105,7 +110,8 @@ class ReportService:
             date_from=req.dateFrom.strftime("%Y-%m-%d") if req.dateFrom else None,
             date_to=req.dateTo.strftime("%Y-%m-%d") if req.dateTo else None,
             limit=5000,
-            offset=0
+            offset=0,
+            is_superuser=is_superuser
         )
 
         # Overwrite column labels with translated labels if sent from frontend

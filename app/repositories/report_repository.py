@@ -69,7 +69,8 @@ class ReportRepository:
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
         limit: int = 100,
-        offset: int = 0
+        offset: int = 0,
+        is_superuser: bool = False
     ) -> Tuple[List[str], Dict[str, str], List[Dict[str, Any]], int, List[str]]:
         
         # Helper helpers locally
@@ -159,9 +160,12 @@ class ReportRepository:
         for i, field in enumerate(selected):
             select_parts.append(f"{field.sql} AS c{i}")
 
-        where_clauses = [f"{report_type.tenant_column} = :p_tenant"]
+        where_clauses = []
+        params = {}
+        if not is_superuser:
+            where_clauses.append(f"{report_type.tenant_column} = :p_tenant")
+            params["p_tenant"] = tenant_id
         having_clauses = []
-        params = {"p_tenant": tenant_id}
         applied_filters = []
 
         if report_type.date_field and date_from and date_from.strip():

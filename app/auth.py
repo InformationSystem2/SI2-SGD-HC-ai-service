@@ -5,6 +5,10 @@ from pathlib import Path
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+
+from app.database import get_db
 
 # Get absolute paths to env files relative to this file
 current_file_dir = Path(__file__).parent.resolve()
@@ -32,16 +36,24 @@ except Exception:
 security = HTTPBearer()
 
 class CurrentUser:
-    def __init__(self, username: str, tenant_id: str, tenant_slug: str, roles: list):
+    def __init__(self, username: str, tenant_id: str, tenant_slug: str, roles: list, permissions: list):
         self.username = username
         self.tenant_id = tenant_id
         self.tenant_slug = tenant_slug
         self.roles = roles
+        self.permissions = permissions
 
     def has_permission(self, required_permission: str) -> bool:
-        return required_permission in self.roles
+        # Permite acceso si el permiso está explícito, o si el usuario es Superadmin
+        return (
+            required_permission in self.permissions
+            or "ROLE_SUPERUSER" or "ROLE_ADMIN" in self.roles
+        )
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> CurrentUser:
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+) -> CurrentUser:
     token = credentials.credentials
     try:
         # Decode the token supporting all standard HMAC strengths used by JJWT
@@ -57,12 +69,36 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token no contiene información de usuario o inquilino requerida"
             )
+
+        # Consultar los permisos asociados a los roles en la base de datos
+        permissions = []
+        if roles:
+            try:
+                # Obtenemos los nombres de los permisos para los roles del usuario
+                query = text("""
+                    SELECT DISTINCT p.name 
+                    FROM permissions p
+                    JOIN role_permission rp ON p.id = rp.permission_id
+                    JOIN roles r ON r.id = rp.role_id
+                    WHERE r.name IN :roles 
+                      AND (r.tenant_id = :tenant_id OR r.tenant_id IS NULL)
+                      AND r.is_active = true 
+                      AND p.is_active = true
+                """)
+                # Convertimos roles a una tupla para la cláusula IN de SQL
+                result = db.execute(query, {"roles": tuple(roles), "tenant_id": tenant_id})
+                permissions = [row[0] for row in result.fetchall()]
+            except Exception as e:
+                print(f"Error fetching permissions for roles {roles}: {e}")
+                # Fallback en caso de que ocurra algún error con la consulta o BD
+                permissions = []
             
         return CurrentUser(
             username=username,
             tenant_id=tenant_id,
             tenant_slug=tenant_slug,
-            roles=roles
+            roles=roles,
+            permissions=permissions
         )
     except jwt.ExpiredSignatureError as e:
         print(f"JWT Validation Error (Expired): {e}")
