@@ -26,18 +26,39 @@ class ReportService:
         self.catalog = ReportCatalog()
 
     def get_catalog(self, user: CurrentUser) -> List[ReportTypeDefinition]:
+        is_superuser = "ROLE_SUPERUSER" in user.roles
+        
+        # Query tenants for options if superuser
+        tenant_options = []
+        if is_superuser:
+            try:
+                from sqlalchemy import text
+                query = text("SELECT DISTINCT name FROM tenants ORDER BY name ASC")
+                results = self.repo.db.execute(query).fetchall()
+                tenant_options = [{"value": r[0], "label": r[0]} for r in results if r[0]]
+            except Exception as e:
+                # Fallback to empty if query fails
+                tenant_options = []
+
         available_reports = []
         for r in self.catalog.all():
             if user.has_permission(r.required_authority):
-                fields = [
-                    FieldDefinition(
-                        key=f.key,
-                        label=f.label,
-                        kind=f.kind.value,
-                        type=f.type.value
+                fields = []
+                for f in r.fields.values():
+                    if f.key == "tenantName" and not is_superuser:
+                        continue
+                    
+                    opts = tenant_options if f.key == "tenantName" else None
+                    
+                    fields.append(
+                        FieldDefinition(
+                            key=f.key,
+                            label=f.label,
+                            kind=f.kind.value,
+                            type=f.type.value,
+                            options=opts
+                        )
                     )
-                    for f in r.fields.values()
-                ]
                 available_reports.append(
                     ReportTypeDefinition(
                         key=r.key,
@@ -59,6 +80,13 @@ class ReportService:
             raise HTTPException(status_code=403, detail="Acceso denegado a este reporte")
 
         is_superuser = "ROLE_SUPERUSER" in user.roles
+
+        if not is_superuser:
+            if "tenantName" in req.selectedFields:
+                req.selectedFields = [f for f in req.selectedFields if f != "tenantName"]
+            req.filters = [f for f in req.filters if f.field != "tenantName"]
+            if req.sortField == "tenantName":
+                req.sortField = None
 
         columns, column_labels, rows, total, applied_filters = self.repo.execute_report_query(
             report_type=report_type,
@@ -98,6 +126,13 @@ class ReportService:
             raise HTTPException(status_code=403, detail="Acceso denegado a este reporte")
 
         is_superuser = "ROLE_SUPERUSER" in user.roles
+
+        if not is_superuser:
+            if "tenantName" in req.selectedFields:
+                req.selectedFields = [f for f in req.selectedFields if f != "tenantName"]
+            req.filters = [f for f in req.filters if f.field != "tenantName"]
+            if req.sortField == "tenantName":
+                req.sortField = None
 
         # Force limit to 5000 for safety in exports
         columns, column_labels, rows, total, applied_filters = self.repo.execute_report_query(

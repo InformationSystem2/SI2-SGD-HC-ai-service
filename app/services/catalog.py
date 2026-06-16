@@ -134,7 +134,7 @@ class ReportCatalog:
             from_clause="patients p",
             tenant_column="p.tenant_id",
             date_field="p.created_at",
-            joins={},
+            joins={"tenant": "LEFT JOIN tenants tn ON tn.id = p.tenant_id"},
             fields=[
                 ReportField.plain("documentNumber", "Nro. documento", "p.document_number", FieldType.STRING),
                 ReportField.plain("documentType", "Tipo doc.", "CAST(p.document_type AS TEXT)", FieldType.STRING),
@@ -145,7 +145,8 @@ class ReportCatalog:
                 ReportField.plain("birthDate", "Fecha nac.", "p.birth_date", FieldType.DATE),
                 ReportField.plain("phone", "Teléfono", "p.phone", FieldType.STRING),
                 ReportField.plain("address", "Dirección", "p.address", FieldType.STRING),
-                ReportField.plain("createdAt", "Registrado", "p.created_at", FieldType.DATE)
+                ReportField.plain("createdAt", "Registrado", "p.created_at", FieldType.DATE),
+                ReportField.plain("tenantName", "Tenant / Clínica", "tn.name", FieldType.STRING, ["tenant"])
             ]
         )
 
@@ -158,7 +159,7 @@ class ReportCatalog:
             from_clause="users u",
             tenant_column="u.tenant_id",
             date_field="u.created_at",
-            joins={},
+            joins={"tenant": "LEFT JOIN tenants tn ON tn.id = u.tenant_id"},
             fields=[
                 ReportField.plain("username", "Usuario", "u.username", FieldType.STRING),
                 ReportField.plain("firstName", "Nombre", "u.first_name", FieldType.STRING),
@@ -170,7 +171,8 @@ class ReportCatalog:
                 ReportField.plain("roles", "Roles",
                                  "(SELECT string_agg(r.name, ', ') FROM role_user ru JOIN roles r ON r.id = ru.role_id WHERE ru.user_id = u.id)",
                                  FieldType.STRING),
-                ReportField.plain("createdAt", "Registrado", "u.created_at", FieldType.DATE)
+                ReportField.plain("createdAt", "Registrado", "u.created_at", FieldType.DATE),
+                ReportField.plain("tenantName", "Tenant / Clínica", "tn.name", FieldType.STRING, ["tenant"])
             ]
         )
 
@@ -186,7 +188,8 @@ class ReportCatalog:
             joins={
                 "patient": "LEFT JOIN patients p ON p.id = d.patient_id",
                 "uploader": "LEFT JOIN users u ON u.id = d.uploader_id",
-                "template": "LEFT JOIN document_templates t ON t.id = d.template_id"
+                "template": "LEFT JOIN document_templates t ON t.id = d.template_id",
+                "tenant": "LEFT JOIN tenants tn ON tn.id = d.tenant_id"
             },
             fields=[
                 ReportField.plain("status", "Estado", "CAST(d.status AS TEXT)", FieldType.STRING),
@@ -198,7 +201,8 @@ class ReportCatalog:
                 ReportField.plain("patientName", "Paciente", "(p.first_name || ' ' || p.last_name)", FieldType.STRING, ["patient"]),
                 ReportField.plain("patientDocument", "Doc. paciente", "p.document_number", FieldType.STRING, ["patient"]),
                 ReportField.plain("uploaderName", "Subido por", "(u.first_name || ' ' || u.last_name)", FieldType.STRING, ["uploader"]),
-                ReportField.plain("templateName", "Plantilla", "COALESCE(t.name, '(sin plantilla)')", FieldType.STRING, ["template"])
+                ReportField.plain("templateName", "Plantilla", "COALESCE(t.name, '(sin plantilla)')", FieldType.STRING, ["template"]),
+                ReportField.plain("tenantName", "Tenant / Clínica", "tn.name", FieldType.STRING, ["tenant"])
             ]
         )
 
@@ -211,7 +215,7 @@ class ReportCatalog:
             from_clause="document_templates t",
             tenant_column="t.tenant_id",
             date_field="t.created_at",
-            joins={},
+            joins={"tenant": "LEFT JOIN tenants tn ON tn.id = t.tenant_id"},
             fields=[
                 ReportField.plain("name", "Nombre", "t.name", FieldType.STRING),
                 ReportField.plain("description", "Descripción", "t.description", FieldType.STRING),
@@ -250,7 +254,8 @@ class ReportCatalog:
                                      ORDER BY COALESCE(NULLIF(fld.value->>'order', '')::int, 0)) 
                                      FROM jsonb_each(t.ui_schema) AS fld)""", FieldType.STRING),
                 ReportField.plain("createdAt", "Creada", "t.created_at", FieldType.DATE),
-                ReportField.plain("updatedAt", "Actualizada", "t.updated_at", FieldType.DATE)
+                ReportField.plain("updatedAt", "Actualizada", "t.updated_at", FieldType.DATE),
+                ReportField.plain("tenantName", "Tenant / Clínica", "tn.name", FieldType.STRING, ["tenant"])
             ]
         )
 
@@ -264,10 +269,11 @@ class ReportCatalog:
             from_clause="patients p",
             tenant_column="p.tenant_id",
             date_field="p.created_at",
-            joins={},
+            joins={"tenant": "LEFT JOIN tenants tn ON tn.id = p.tenant_id"},
             fields=[
                 ReportField.dimension("gender", "Género", "CAST(p.gender AS TEXT)", FieldType.STRING),
-                ReportField.measure("total", "Total pacientes", "COUNT(*)", FieldType.NUMBER)
+                ReportField.measure("total", "Total pacientes", "COUNT(*)", FieldType.NUMBER),
+                ReportField.dimension("tenantName", "Tenant / Clínica", "tn.name", FieldType.STRING, ["tenant"])
             ]
         )
 
@@ -280,10 +286,11 @@ class ReportCatalog:
             from_clause="documents d",
             tenant_column="d.tenant_id",
             date_field="d.created_at",
-            joins={},
+            joins={"tenant": "LEFT JOIN tenants tn ON tn.id = d.tenant_id"},
             fields=[
                 ReportField.dimension("status", "Estado", "CAST(d.status AS TEXT)", FieldType.STRING),
-                ReportField.measure("total", "Total documentos", "COUNT(*)", FieldType.NUMBER)
+                ReportField.measure("total", "Total documentos", "COUNT(*)", FieldType.NUMBER),
+                ReportField.dimension("tenantName", "Tenant / Clínica", "tn.name", FieldType.STRING, ["tenant"])
             ]
         )
 
@@ -296,10 +303,11 @@ class ReportCatalog:
             from_clause="documents d",
             tenant_column="d.tenant_id",
             date_field="d.created_at",
-            joins={},
+            joins={"tenant": "LEFT JOIN tenants tn ON tn.id = d.tenant_id"},
             fields=[
                 ReportField.dimension("month", "Mes", "to_char(d.created_at, 'YYYY-MM')", FieldType.STRING),
-                ReportField.measure("total", "Total documentos", "COUNT(*)", FieldType.NUMBER)
+                ReportField.measure("total", "Total documentos", "COUNT(*)", FieldType.NUMBER),
+                ReportField.dimension("tenantName", "Tenant / Clínica", "tn.name", FieldType.STRING, ["tenant"])
             ]
         )
 
@@ -313,10 +321,12 @@ class ReportCatalog:
             tenant_column="d.tenant_id",
             date_field="d.created_at",
             joins={
-                "template": "LEFT JOIN document_templates t ON t.id = d.template_id"
+                "template": "LEFT JOIN document_templates t ON t.id = d.template_id",
+                "tenant": "LEFT JOIN tenants tn ON tn.id = d.tenant_id"
             },
             fields=[
                 ReportField.dimension("templateName", "Plantilla", "COALESCE(t.name, '(sin plantilla)')", FieldType.STRING, ["template"]),
-                ReportField.measure("total", "Total documentos", "COUNT(*)", FieldType.NUMBER)
+                ReportField.measure("total", "Total documentos", "COUNT(*)", FieldType.NUMBER),
+                ReportField.dimension("tenantName", "Tenant / Clínica", "tn.name", FieldType.STRING, ["tenant"])
             ]
         )

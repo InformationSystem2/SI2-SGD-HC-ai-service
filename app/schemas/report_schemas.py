@@ -62,11 +62,16 @@ class ReportTemplateResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class FieldOption(BaseModel):
+    value: str
+    label: str
+
 class FieldDefinition(BaseModel):
     key: str
     label: str
     kind: str
     type: str
+    options: Optional[List[FieldOption]] = None
 
 class ReportTypeDefinition(BaseModel):
     key: str
@@ -87,3 +92,12 @@ class ReportResult(BaseModel):
     limit: int
     generatedAt: str
     appliedFilters: List[str]
+
+class PromptReportRequest(BaseModel):
+    prompt: str
+
+class AIReportResponse(BaseModel):
+    transcript: Optional[str] = None
+    query: ReportRunRequest
+    result: ReportResult
+
