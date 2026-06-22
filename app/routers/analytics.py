@@ -30,3 +30,7 @@ def get_medical_studies_volume(tenant_id: str = Path(...), db: Session = Depends
 @router.get("/clinic/{tenant_id}/critical-alerts")
 def get_critical_alerts(tenant_id: str = Path(...), db: Session = Depends(get_db)):
     return {"data": analytics_service.get_clinic_critical_alerts(db, tenant_id)}
+
+@router.get("/clinic/{tenant_id}/plan-usage")
+def get_plan_usage(tenant_id: str = Path(...), db: Session = Depends(get_db)):
+    return {"data": analytics_service.get_clinic_plan_usage(db, tenant_id)}
