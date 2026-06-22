@@ -20,3 +20,7 @@ def get_clinic_medical_studies(db: Session, tenant_id: str):
 
 def get_clinic_critical_alerts(db: Session, tenant_id: str):
     return analytics_repository.get_critical_alerts(db, tenant_id)
+
+# --- PLAN USAGE ---
+def get_clinic_plan_usage(db: Session, tenant_id: str):
+    return analytics_repository.get_plan_usage(db, tenant_id)
