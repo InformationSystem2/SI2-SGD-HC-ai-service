@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import tempfile
+import time
 from typing import Optional, Tuple
 import google.generativeai as genai
 from dotenv import load_dotenv
@@ -108,10 +109,20 @@ class ReportAIService:
         try:
             logger.info("Subiendo archivo de audio temporal a la API de Gemini: %s", temp_file_path)
             uploaded_file = genai.upload_file(path=temp_file_path)
-            
+
+            for attempt in range(10):
+                file_info = genai.get_file(uploaded_file.name)
+                if file_info.state.name == "ACTIVE":
+                    logger.info("Archivo ACTIVE después de %d intentos", attempt)
+                    break
+                logger.info("Archivo en estado %s, esperando... (intento %d)", file_info.state.name, attempt + 1)
+                time.sleep(2)
+            else:
+                raise RuntimeError(f"El archivo {uploaded_file.name} no alcanzó estado ACTIVE tras 10 reintentos")
+
             model = genai.GenerativeModel('gemini-2.5-flash')
             response = model.generate_content([
-                uploaded_file, 
+                uploaded_file,
                 "Por favor, transcribe este audio en español. Solo devuelve la transcripción literal, nada de texto adicional o introducciones."
             ])
             
