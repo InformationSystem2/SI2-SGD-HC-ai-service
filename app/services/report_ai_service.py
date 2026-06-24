@@ -1,10 +1,10 @@
 import os
 import json
 import logging
-import tempfile
-import time
-from typing import Optional, Tuple
-import google.generativeai as genai
+from typing import Optional
+from google import genai
+from google.genai import types
+from google.oauth2 import service_account
 from dotenv import load_dotenv
 
 from app.services.catalog import ReportCatalog
@@ -13,8 +13,38 @@ from app.schemas.report_schemas import ReportRunRequest, ReportFilter
 logger = logging.getLogger(__name__)
 load_dotenv()
 
-# Initialize genai with API Key
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+VERTEX_PROJECT_ID = os.getenv("VERTEX_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT")
+VERTEX_LOCATION   = os.getenv("VERTEX_LOCATION", "us-central1")
+VERTEX_MODEL_NAME = os.getenv("VERTEX_MODEL_NAME", "gemini-2.5-flash")
+
+
+def _get_client() -> genai.Client:
+    key_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_VERTEX")
+    creds = None
+    if key_path and os.path.exists(key_path):
+        creds = service_account.Credentials.from_service_account_file(
+            key_path,
+            scopes=["https://www.googleapis.com/auth/cloud-platform"],
+        )
+    return genai.Client(
+        vertexai=True,
+        project=VERTEX_PROJECT_ID,
+        location=VERTEX_LOCATION,
+        credentials=creds,
+    )
+
+
+def _extract_json(raw: str) -> dict:
+    text = raw.replace("```json", "").replace("```", "").strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json.loads(text[start:end + 1])
+        raise
+
 
 class ReportAIService:
     @staticmethod
@@ -31,8 +61,11 @@ class ReportAIService:
 
     @classmethod
     def parse_prompt(cls, prompt: str) -> Optional[dict]:
-        catalog_desc = cls.get_catalog_description()
+        if not VERTEX_PROJECT_ID:
+            logger.warning("VERTEX_PROJECT_ID no configurado")
+            return None
 
+        catalog_desc = cls.get_catalog_description()
         instruction = (
             "Eres un asistente experto en análisis de datos para un sistema de gestión documental clínica (historias clínicas, pacientes, documentos, usuarios, plantillas).\n"
             "Tu tarea es interpretar la solicitud en lenguaje natural del usuario (en español o inglés) y traducirla a una consulta estructurada de reportes en formato JSON.\n\n"
@@ -56,85 +89,59 @@ class ReportAIService:
             "5. Si el usuario pide una cantidad limitada de registros (ej. 'los primeros 5', 'los últimos 10'), asigna ese número al campo 'limit'.\n"
             "6. Genera la salida respetando estrictamente el formato JSON especificado. No incluyas texto adicional o explicaciones, solo devuelve el objeto JSON.\n\n"
             "Ejemplo de formato de salida esperado:\n"
-            "{\n"
-            "  \"reportType\": \"patients\",\n"
-            "  \"selectedFields\": [\"documentNumber\", \"fullName\", \"gender\"],\n"
-            "  \"filters\": [\n"
-            "    {\"field\": \"gender\", \"operator\": \"EQ\", \"value\": \"FEMALE\"}\n"
-            "  ],\n"
-            "  \"sortField\": \"createdAt\",\n"
-            "  \"sortOrder\": \"desc\",\n"
-            "  \"limit\": 50,\n"
-            "  \"offset\": 0\n"
-            "}"
+            '{"reportType":"patients","selectedFields":["documentNumber","fullName","gender"],'
+            '"filters":[{"field":"gender","operator":"EQ","value":"FEMALE"}],'
+            '"sortField":"createdAt","sortOrder":"desc","limit":50,"offset":0}'
         )
 
         try:
-            model = genai.GenerativeModel('gemini-2.5-flash')
-            response = model.generate_content(
-                [instruction, f"Solicitud del usuario: {prompt}"],
-                generation_config=genai.types.GenerationConfig(
+            client = _get_client()
+            response = client.models.generate_content(
+                model=VERTEX_MODEL_NAME,
+                contents=[instruction, f"Solicitud del usuario: {prompt}"],
+                config=types.GenerateContentConfig(
                     temperature=0.1,
                     top_p=0.8,
                     response_mime_type="application/json",
-                )
+                    thinking_config=types.ThinkingConfig(thinking_level="low"),
+                ),
             )
-
-            raw_text = response.text.strip() if response.text else "{}"
-            if raw_text.startswith("```"):
-                raw_text = raw_text.strip("`")
-                if raw_text.lower().startswith("json"):
-                    raw_text = raw_text[4:].strip()
-
-            start = raw_text.find("{")
-            end = raw_text.rfind("}")
-            if start != -1 and end != -1 and end > start:
-                raw_text = raw_text[start : end + 1]
-
-            result_dict = json.loads(raw_text)
-            return result_dict
-
+            return _extract_json(response.text)
         except Exception as e:
-            logger.exception("Error al parsear el prompt del reporte usando Gemini: %s", e)
+            logger.exception("Error al parsear el prompt del reporte: %s", e)
             return None
 
     @classmethod
     def transcribe_audio(cls, file_bytes: bytes, filename: str) -> Optional[str]:
-        # Save bytes to a temporary local file
-        suffix = os.path.splitext(filename)[1] or ".webm"
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
-            temp_file.write(file_bytes)
-            temp_file_path = temp_file.name
+        _MIME_MAP = {
+            ".webm": "audio/webm",
+            ".m4a":  "audio/mp4",
+            ".mp3":  "audio/mpeg",
+            ".wav":  "audio/wav",
+            ".ogg":  "audio/ogg",
+            ".flac": "audio/flac",
+        }
+        suffix = os.path.splitext(filename)[1].lower() or ".webm"
+        mime_type = _MIME_MAP.get(suffix, "audio/webm")
 
         try:
-            logger.info("Subiendo archivo de audio temporal a la API de Gemini: %s", temp_file_path)
-            uploaded_file = genai.upload_file(path=temp_file_path)
+            if not VERTEX_PROJECT_ID:
+                logger.warning("VERTEX_PROJECT_ID no configurado")
+                return None
 
-            for attempt in range(10):
-                file_info = genai.get_file(uploaded_file.name)
-                if file_info.state.name == "ACTIVE":
-                    logger.info("Archivo ACTIVE después de %d intentos", attempt)
-                    break
-                logger.info("Archivo en estado %s, esperando... (intento %d)", file_info.state.name, attempt + 1)
-                time.sleep(2)
-            else:
-                raise RuntimeError(f"El archivo {uploaded_file.name} no alcanzó estado ACTIVE tras 10 reintentos")
-
-            model = genai.GenerativeModel('gemini-2.5-flash')
-            response = model.generate_content([
-                uploaded_file,
-                "Por favor, transcribe este audio en español. Solo devuelve la transcripción literal, nada de texto adicional o introducciones."
-            ])
-            
-            # Delete file from Gemini servers
-            genai.delete_file(uploaded_file.name)
-            
+            logger.info("Transcribiendo audio con Vertex AI: %s (%s)", filename, mime_type)
+            client = _get_client()
+            audio_part = types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
+            response = client.models.generate_content(
+                model=VERTEX_MODEL_NAME,
+                contents=[
+                    audio_part,
+                    "Por favor, transcribe este audio en español. Solo devuelve la transcripción literal, nada de texto adicional o introducciones.",
+                ],
+            )
             transcript = response.text.strip()
             logger.info("Transcripción exitosa: %s", transcript)
             return transcript
         except Exception as e:
-            logger.exception("Error al transcribir el audio usando Gemini: %s", e)
+            logger.exception("Error al transcribir el audio: %s", e)
             return None
-        finally:
-            if os.path.exists(temp_file_path):
-                os.remove(temp_file_path)
